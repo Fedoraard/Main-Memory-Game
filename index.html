@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blackout! Misi Selamatkan Data</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">Blackout!<i aria-hidden="true"></i></div>
+    <div class="hud">
+      <button class="lb-btn" id="nav-lb-btn" type="button" title="Lihat Papan Skor">🏆 Leaderboard</button>
+      <ol class="slots" aria-label="Progres ronde">
+        <li class="slot">R1</li><li class="slot">R2</li><li class="slot">R3</li>
+      </ol>
+      <div class="score" aria-live="polite"><span id="score">0</span><small>poin</small></div>
+    </div>
+  </header>
+  <main id="stage"></main>
+  <footer class="foot">Bahan: Modul Ajar Main Memory, Teknik Komputer dan Jaringan.</footer>
+</div>
+<div class="outage" id="outage" role="status" aria-live="assertive" hidden><b id="otxt"></b></div>
+
+<script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,1 @@
+# Game ini 100% menggunakan Python standard library (http.server, sqlite3, json)
