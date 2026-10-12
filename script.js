@@ -545,22 +545,65 @@ function finish(){
 var lbOrder = 'desc';
 var lbStatus = 'completed';
 
+function getLocalSessions(){
+  try{
+    var s = localStorage.getItem('blackout-sessions');
+    if(!s){
+      var seeds = [
+        {id:1, name:'Budi Santoso', total:96, r1:28, r2:40, r3:28, duration:320, title:'Arsitek Memori', status:'completed'},
+        {id:2, name:'Siti Rahma', total:88, r1:24, r2:40, r3:24, duration:350, title:'Teknisi Senior', status:'completed'},
+        {id:3, name:'Ahmad Fauzi', total:72, r1:20, r2:30, r3:22, duration:410, title:'Teknisi Senior', status:'completed'},
+        {id:4, name:'Dewi Lestari', total:54, r1:14, r2:25, r3:15, duration:460, title:'Teknisi Magang', status:'completed'},
+        {id:5, name:'Reza Pratama', total:38, r1:10, r2:18, r3:10, duration:480, title:'Calon Teknisi', status:'completed'}
+      ];
+      localStorage.setItem('blackout-sessions', JSON.stringify(seeds));
+      return seeds;
+    }
+    return JSON.parse(s);
+  }catch(e){
+    return [];
+  }
+}
+function saveLocalSessions(list){
+  try{localStorage.setItem('blackout-sessions', JSON.stringify(list))}catch(e){}
+}
+
 function startSession(name, cb){
-  state.sessionId=null;
+  state.sessionId = Date.now();
   fetch('/api/start', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({name: name||'Anonim'})
   })
-  .then(function(r){return r.json()})
+  .then(function(r){if(!r.ok){throw new Error('offline')} return r.json()})
   .then(function(data){
     if(data&&data.id){state.sessionId=data.id}
     if(cb){cb()}
   })
-  .catch(function(err){
-    console.warn('Gagal mencatat sesi:', err);
+  .catch(function(){
+    var list = getLocalSessions();
+    list.push({
+      id: state.sessionId,
+      name: name||'Anonim',
+      total: 0, r1:0, r2:0, r3:0, duration:0,
+      title: '', status: 'playing'
+    });
+    saveLocalSessions(list);
     if(cb){cb()}
   });
+}
+
+function renderRankBanner(rank, total){
+  var rw=$('#rank-wrap');
+  if(rw){
+    rw.innerHTML=
+      '<div class="rank-banner">'+
+        '<div>🏆 Peringkat Kelas: <b>#'+rank+'</b> dari '+total+' siswa</div>'+
+        '<button class="btn-pill active" id="quick-lb-btn" type="button">Buka Leaderboard &raquo;</button>'+
+      '</div>';
+    var qb=$('#quick-lb-btn');
+    if(qb){qb.onclick=function(){showLeaderboard(finish, state.sessionId)}};
+  }
 }
 
 function submitFinish(tot, secs, title){
@@ -578,25 +621,44 @@ function submitFinish(tot, secs, title){
       duration: secs
     })
   })
-  .then(function(r){return r.json()})
+  .then(function(r){if(!r.ok){throw new Error('offline')} return r.json()})
   .then(function(res){
     if(res&&res.success){
-      state.lastRank=res.rank;
-      state.totalPlayers=res.total_players;
-      var rw=$('#rank-wrap');
-      if(rw){
-        rw.innerHTML=
-          '<div class="rank-banner">'+
-            '<div>🏆 Peringkat Kelas: <b>#'+res.rank+'</b> dari '+res.total_players+' siswa</div>'+
-            '<button class="btn-pill active" id="quick-lb-btn" type="button">Buka Leaderboard &raquo;</button>'+
-          '</div>';
-        var qb=$('#quick-lb-btn');
-        if(qb){qb.onclick=function(){showLeaderboard(finish, state.sessionId)}};
-      }
+      renderRankBanner(res.rank, res.total_players);
     }
   })
-  .catch(function(err){
-    console.warn('Gagal menyimpan hasil:', err);
+  .catch(function(){
+    var list = getLocalSessions();
+    var found = false;
+    for(var i=0; i<list.length; i++){
+      if(list[i].id === state.sessionId){
+        list[i].total = tot;
+        list[i].r1 = state.s.r1;
+        list[i].r2 = state.s.r2;
+        list[i].r3 = state.s.r3;
+        list[i].duration = secs;
+        list[i].title = title;
+        list[i].status = 'completed';
+        found = true;
+        break;
+      }
+    }
+    if(!found){
+      list.push({
+        id: state.sessionId,
+        name: state.name||'Anonim',
+        total: tot, r1:state.s.r1, r2:state.s.r2, r3:state.s.r3,
+        duration: secs, title: title, status: 'completed'
+      });
+    }
+    saveLocalSessions(list);
+    var comp = list.filter(function(x){return x.status==='completed'});
+    comp.sort(function(a,b){return (b.total - a.total) || (a.duration - b.duration)});
+    var myRank = 1;
+    for(var k=0; k<comp.length; k++){
+      if(comp[k].id === state.sessionId){myRank = k+1; break;}
+    }
+    renderRankBanner(myRank, comp.length);
   });
 }
 
@@ -670,53 +732,96 @@ function showLeaderboard(returnFn, highlightedId){
 function loadLeaderboardData(highlightedId){
   var url = '/api/leaderboard?order=' + lbOrder + '&status=' + lbStatus;
   fetch(url)
-    .then(function(r){return r.json()})
+    .then(function(r){if(!r.ok){throw new Error('offline')} return r.json()})
     .then(function(data){
-      var s = data.stats || {};
-      var statsEl = $('#lb-stats');
-      if(statsEl){
-        statsEl.innerHTML =
-          '<div class="stat-card"><div class="val">'+(s.total_completed||0)+'</div><div class="lbl">Siswa Selesai</div><div class="who">'+(s.total_players||0)+' total sesi</div></div>'+
-          '<div class="stat-card hi"><div class="val">'+(s.highest_score||0)+'<small>/100</small></div><div class="lbl">Nilai Tertinggi</div><div class="who">'+(escapeHtml(s.highest_scorer_name)||'-')+'</div></div>'+
-          '<div class="stat-card lo"><div class="val">'+(s.lowest_score||0)+'<small>/100</small></div><div class="lbl">Nilai Terendah</div><div class="who">'+(escapeHtml(s.lowest_scorer_name)||'-')+'</div></div>'+
-          '<div class="stat-card"><div class="val">'+(s.average_score||0)+'</div><div class="lbl">Rata-rata Kelas</div><div class="who">skor total</div></div>';
-      }
-
-      var tbody = $('#lb-rows');
-      if(!tbody) return;
-      var players = data.players || [];
-      if(players.length === 0){
-        tbody.innerHTML = '<tr><td colspan="7" class="empty-lb">Belum ada data nilai tersimpan. Jadilah siswa pertama yang menyelesaikan misi!</td></tr>';
-        return;
-      }
-
-      var html = '';
-      players.forEach(function(p, idx){
-        var isHl = highlightedId && (p.id === highlightedId);
-        var mm = Math.floor((p.duration||0)/60), ss = (p.duration||0)%60;
-        var durStr = (p.duration > 0) ? (mm+'m '+(ss<10?'0':'')+ss+'s') : '-';
-        var rankBadge = (lbOrder === 'desc') ? (idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : '#'+p.rank))) : ('#'+p.rank);
-        var isDone = p.status === 'completed';
-
-        html +=
-          '<tr class="'+(isHl?'highlight':'')+'">'+
-            '<td><span class="badge-rank">'+rankBadge+'</span></td>'+
-            '<td><b>'+escapeHtml(p.name)+'</b>'+(isHl?' <span style="font-size:0.75rem;color:var(--board);font-weight:700">(Kamu)</span>':'')+'</td>'+
-            '<td><span class="badge-score">'+p.total+'</span><small style="color:var(--muted)">/100</small></td>'+
-            '<td style="font-family:var(--font-mono);font-size:0.8rem;color:var(--muted)">R1:'+p.r1+' | R2:'+p.r2+' | R3:'+p.r3+'</td>'+
-            '<td style="font-family:var(--font-mono);font-size:0.8rem">'+durStr+'</td>'+
-            '<td><span style="font-size:0.82rem">'+escapeHtml(p.title||'-')+'</span></td>'+
-            '<td><span class="badge-status '+(isDone?'completed':'playing')+'">'+(isDone?'Selesai':'Main')+'</span></td>'+
-          '</tr>';
-      });
-      tbody.innerHTML = html;
+      renderLeaderboardUI(data.players, data.stats, highlightedId);
     })
-    .catch(function(err){
-      var tbody = $('#lb-rows');
-      if(tbody){
-        tbody.innerHTML = '<tr><td colspan="7" class="empty-lb" style="color:var(--red)">Gagal memuat papan skor: '+escapeHtml(err.message)+'</td></tr>';
+    .catch(function(){
+      // Fallback lokal / GitHub Pages
+      var all = getLocalSessions();
+      var filtered = all;
+      if(lbStatus === 'completed'){
+        filtered = all.filter(function(x){return x.status === 'completed'});
       }
+      filtered.sort(function(a,b){
+        if(lbOrder === 'asc'){
+          return (a.total - b.total) || (b.duration - a.duration);
+        } else {
+          return (b.total - a.total) || (a.duration - b.duration);
+        }
+      });
+      var players = filtered.map(function(item, idx){
+        return {
+          rank: idx + 1,
+          id: item.id,
+          name: item.name,
+          total: item.total || 0,
+          r1: item.r1 || 0,
+          r2: item.r2 || 0,
+          r3: item.r3 || 0,
+          duration: item.duration || 0,
+          title: item.title || '',
+          status: item.status || 'completed'
+        };
+      });
+      var comp = all.filter(function(x){return x.status === 'completed'});
+      var maxP = null, minP = null, sum = 0;
+      comp.forEach(function(c){
+        sum += (c.total || 0);
+        if(!maxP || c.total > maxP.total) maxP = c;
+        if(!minP || c.total < minP.total) minP = c;
+      });
+      var stats = {
+        total_players: all.length,
+        total_completed: comp.length,
+        highest_score: maxP ? maxP.total : 0,
+        highest_scorer_name: maxP ? maxP.name : '-',
+        lowest_score: minP ? minP.total : 0,
+        lowest_scorer_name: minP ? minP.name : '-',
+        average_score: comp.length ? Math.round((sum / comp.length)*10)/10 : 0
+      };
+      renderLeaderboardUI(players, stats, highlightedId);
     });
+}
+
+function renderLeaderboardUI(players, stats, highlightedId){
+  var s = stats || {};
+  var statsEl = $('#lb-stats');
+  if(statsEl){
+    statsEl.innerHTML =
+      '<div class="stat-card"><div class="val">'+(s.total_completed||0)+'</div><div class="lbl">Siswa Selesai</div><div class="who">'+(s.total_players||0)+' total sesi</div></div>'+
+      '<div class="stat-card hi"><div class="val">'+(s.highest_score||0)+'<small>/100</small></div><div class="lbl">Nilai Tertinggi</div><div class="who">'+(escapeHtml(s.highest_scorer_name)||'-')+'</div></div>'+
+      '<div class="stat-card lo"><div class="val">'+(s.lowest_score||0)+'<small>/100</small></div><div class="lbl">Nilai Terendah</div><div class="who">'+(escapeHtml(s.lowest_scorer_name)||'-')+'</div></div>'+
+      '<div class="stat-card"><div class="val">'+(s.average_score||0)+'</div><div class="lbl">Rata-rata Kelas</div><div class="who">skor total</div></div>';
+  }
+
+  var tbody = $('#lb-rows');
+  if(!tbody) return;
+  if(!players || players.length === 0){
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-lb">Belum ada data nilai tersimpan. Jadilah siswa pertama yang menyelesaikan misi!</td></tr>';
+    return;
+  }
+
+  var html = '';
+  players.forEach(function(p, idx){
+    var isHl = highlightedId && (p.id === highlightedId);
+    var mm = Math.floor((p.duration||0)/60), ss = (p.duration||0)%60;
+    var durStr = (p.duration > 0) ? (mm+'m '+(ss<10?'0':'')+ss+'s') : '-';
+    var rankBadge = (lbOrder === 'desc') ? (idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : '#'+p.rank))) : ('#'+p.rank);
+    var isDone = p.status === 'completed';
+
+    html +=
+      '<tr class="'+(isHl?'highlight':'')+'">'+
+        '<td><span class="badge-rank">'+rankBadge+'</span></td>'+
+        '<td><b>'+escapeHtml(p.name)+'</b>'+(isHl?' <span style="font-size:0.75rem;color:var(--board);font-weight:700">(Kamu)</span>':'')+'</td>'+
+        '<td><span class="badge-score">'+p.total+'</span><small style="color:var(--muted)">/100</small></td>'+
+        '<td style="font-family:var(--font-mono);font-size:0.8rem;color:var(--muted)">R1:'+p.r1+' | R2:'+p.r2+' | R3:'+p.r3+'</td>'+
+        '<td style="font-family:var(--font-mono);font-size:0.8rem">'+durStr+'</td>'+
+        '<td><span style="font-size:0.82rem">'+escapeHtml(p.title||'-')+'</span></td>'+
+        '<td><span class="badge-status '+(isDone?'completed':'playing')+'">'+(isDone?'Selesai':'Main')+'</span></td>'+
+      '</tr>';
+  });
+  tbody.innerHTML = html;
 }
 
 function escapeHtml(str){
