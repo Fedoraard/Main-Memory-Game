@@ -727,6 +727,9 @@ function showLeaderboard(returnFn, highlightedId){
   };
 
   loadLeaderboardData(highlightedId);
+  every(function(){
+    loadLeaderboardData(highlightedId);
+  }, 4000);
 }
 
 function loadLeaderboardData(highlightedId){
