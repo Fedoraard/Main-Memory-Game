@@ -544,17 +544,18 @@ function finish(){
 /* ---------- Leaderboard & Database API ---------- */
 var lbOrder = 'desc';
 var lbStatus = 'completed';
+var CLOUD_URL = 'https://kvdb.io/Uiff6XYGoxi5tpqKY1NDSp/scores';
 
 function getLocalSessions(){
   try{
     var s = localStorage.getItem('blackout-sessions');
     if(!s){
       var seeds = [
-        {id:1, name:'Budi Santoso', total:96, r1:28, r2:40, r3:28, duration:320, title:'Arsitek Memori', status:'completed'},
-        {id:2, name:'Siti Rahma', total:88, r1:24, r2:40, r3:24, duration:350, title:'Teknisi Senior', status:'completed'},
-        {id:3, name:'Ahmad Fauzi', total:72, r1:20, r2:30, r3:22, duration:410, title:'Teknisi Senior', status:'completed'},
-        {id:4, name:'Dewi Lestari', total:54, r1:14, r2:25, r3:15, duration:460, title:'Teknisi Magang', status:'completed'},
-        {id:5, name:'Reza Pratama', total:38, r1:10, r2:18, r3:10, duration:480, title:'Calon Teknisi', status:'completed'}
+        {id:'seed-1', name:'Budi Santoso', total:96, r1:28, r2:40, r3:28, duration:320, title:'Arsitek Memori', status:'completed'},
+        {id:'seed-2', name:'Siti Rahma', total:88, r1:24, r2:40, r3:24, duration:350, title:'Teknisi Senior', status:'completed'},
+        {id:'seed-3', name:'Ahmad Fauzi', total:72, r1:20, r2:30, r3:22, duration:410, title:'Teknisi Senior', status:'completed'},
+        {id:'seed-4', name:'Dewi Lestari', total:54, r1:14, r2:25, r3:15, duration:460, title:'Teknisi Magang', status:'completed'},
+        {id:'seed-5', name:'Reza Pratama', total:38, r1:10, r2:18, r3:10, duration:480, title:'Calon Teknisi', status:'completed'}
       ];
       localStorage.setItem('blackout-sessions', JSON.stringify(seeds));
       return seeds;
@@ -564,32 +565,48 @@ function getLocalSessions(){
     return [];
   }
 }
-function saveLocalSessions(list){
+
+function fetchRemoteList(cb){
+  fetch(CLOUD_URL + '?t=' + Date.now())
+    .then(function(r){
+      if(!r.ok) throw new Error('cloud error');
+      return r.json();
+    })
+    .then(function(data){
+      if(Array.isArray(data) && data.length > 0){
+        try{localStorage.setItem('blackout-sessions', JSON.stringify(data))}catch(e){}
+        cb(data);
+      } else {
+        cb(getLocalSessions());
+      }
+    })
+    .catch(function(){
+      cb(getLocalSessions());
+    });
+}
+
+function pushRemoteList(list, cb){
   try{localStorage.setItem('blackout-sessions', JSON.stringify(list))}catch(e){}
+  fetch(CLOUD_URL, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(list)
+  })
+  .then(function(r){ if(cb) cb(r.ok); })
+  .catch(function(){ if(cb) cb(false); });
 }
 
 function startSession(name, cb){
-  state.sessionId = Date.now();
-  fetch('/api/start', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({name: name||'Anonim'})
-  })
-  .then(function(r){if(!r.ok){throw new Error('offline')} return r.json()})
-  .then(function(data){
-    if(data&&data.id){state.sessionId=data.id}
-    if(cb){cb()}
-  })
-  .catch(function(){
-    var list = getLocalSessions();
+  state.sessionId = 'u_' + Date.now() + '_' + Math.floor(Math.random()*1000);
+  fetchRemoteList(function(list){
     list.push({
       id: state.sessionId,
-      name: name||'Anonim',
-      total: 0, r1:0, r2:0, r3:0, duration:0,
+      name: name || 'Anonim',
+      total: 0, r1: 0, r2: 0, r3: 0, duration: 0,
       title: '', status: 'playing'
     });
-    saveLocalSessions(list);
-    if(cb){cb()}
+    pushRemoteList(list);
+    if(cb) cb();
   });
 }
 
@@ -607,28 +624,7 @@ function renderRankBanner(rank, total){
 }
 
 function submitFinish(tot, secs, title){
-  fetch('/api/finish', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({
-      id: state.sessionId,
-      name: state.name||'Anonim',
-      r1: state.s.r1,
-      r2: state.s.r2,
-      r3: state.s.r3,
-      total: tot,
-      title: title,
-      duration: secs
-    })
-  })
-  .then(function(r){if(!r.ok){throw new Error('offline')} return r.json()})
-  .then(function(res){
-    if(res&&res.success){
-      renderRankBanner(res.rank, res.total_players);
-    }
-  })
-  .catch(function(){
-    var list = getLocalSessions();
+  fetchRemoteList(function(list){
     var found = false;
     for(var i=0; i<list.length; i++){
       if(list[i].id === state.sessionId){
@@ -646,13 +642,13 @@ function submitFinish(tot, secs, title){
     if(!found){
       list.push({
         id: state.sessionId,
-        name: state.name||'Anonim',
-        total: tot, r1:state.s.r1, r2:state.s.r2, r3:state.s.r3,
+        name: state.name || 'Anonim',
+        total: tot, r1: state.s.r1, r2: state.s.r2, r3: state.s.r3,
         duration: secs, title: title, status: 'completed'
       });
     }
-    saveLocalSessions(list);
-    var comp = list.filter(function(x){return x.status==='completed'});
+    pushRemoteList(list);
+    var comp = list.filter(function(x){return x.status === 'completed'});
     comp.sort(function(a,b){return (b.total - a.total) || (a.duration - b.duration)});
     var myRank = 1;
     for(var k=0; k<comp.length; k++){
@@ -667,9 +663,9 @@ function showLeaderboard(returnFn, highlightedId){
   var backFn = returnFn || intro;
   show(
     '<section class="panel">'+
-    '<p class="eyebrow">Database Nilai Kelas &middot; Papan Skor</p>'+
+    '<p class="eyebrow">Cloud Database Kelas &middot; Papan Skor Realtime</p>'+
     '<h2>🏆 Papan Peringkat (Leaderboard)</h2>'+
-    '<p class="lead">Pantau skor seluruh siswa secara realtime, dari yang tertinggi hingga terendah.</p>'+
+    '<p class="lead">Tersinkronisasi realtime antar seluruh HP & laptop siswa.</p>'+
     '<div id="lb-stats" class="stat-grid">'+
       '<div class="stat-card"><div class="val">-</div><div class="lbl">Siswa Selesai</div></div>'+
       '<div class="stat-card hi"><div class="val">-</div><div class="lbl">Nilai Tertinggi</div><div class="who">-</div></div>'+
@@ -698,7 +694,7 @@ function showLeaderboard(returnFn, highlightedId){
           '</tr>'+
         '</thead>'+
         '<tbody id="lb-rows">'+
-          '<tr><td colspan="7" class="empty-lb">Memuat data dari database...</td></tr>'+
+          '<tr><td colspan="7" class="empty-lb">Memuat data cloud realtime...</td></tr>'+
         '</tbody>'+
       '</table>'+
     '</div>'+
@@ -733,58 +729,50 @@ function showLeaderboard(returnFn, highlightedId){
 }
 
 function loadLeaderboardData(highlightedId){
-  var url = '/api/leaderboard?order=' + lbOrder + '&status=' + lbStatus;
-  fetch(url)
-    .then(function(r){if(!r.ok){throw new Error('offline')} return r.json()})
-    .then(function(data){
-      renderLeaderboardUI(data.players, data.stats, highlightedId);
-    })
-    .catch(function(){
-      // Fallback lokal / GitHub Pages
-      var all = getLocalSessions();
-      var filtered = all;
-      if(lbStatus === 'completed'){
-        filtered = all.filter(function(x){return x.status === 'completed'});
+  fetchRemoteList(function(all){
+    var filtered = all;
+    if(lbStatus === 'completed'){
+      filtered = all.filter(function(x){return x.status === 'completed'});
+    }
+    filtered.sort(function(a,b){
+      if(lbOrder === 'asc'){
+        return (a.total - b.total) || (b.duration - a.duration);
+      } else {
+        return (b.total - a.total) || (a.duration - b.duration);
       }
-      filtered.sort(function(a,b){
-        if(lbOrder === 'asc'){
-          return (a.total - b.total) || (b.duration - a.duration);
-        } else {
-          return (b.total - a.total) || (a.duration - b.duration);
-        }
-      });
-      var players = filtered.map(function(item, idx){
-        return {
-          rank: idx + 1,
-          id: item.id,
-          name: item.name,
-          total: item.total || 0,
-          r1: item.r1 || 0,
-          r2: item.r2 || 0,
-          r3: item.r3 || 0,
-          duration: item.duration || 0,
-          title: item.title || '',
-          status: item.status || 'completed'
-        };
-      });
-      var comp = all.filter(function(x){return x.status === 'completed'});
-      var maxP = null, minP = null, sum = 0;
-      comp.forEach(function(c){
-        sum += (c.total || 0);
-        if(!maxP || c.total > maxP.total) maxP = c;
-        if(!minP || c.total < minP.total) minP = c;
-      });
-      var stats = {
-        total_players: all.length,
-        total_completed: comp.length,
-        highest_score: maxP ? maxP.total : 0,
-        highest_scorer_name: maxP ? maxP.name : '-',
-        lowest_score: minP ? minP.total : 0,
-        lowest_scorer_name: minP ? minP.name : '-',
-        average_score: comp.length ? Math.round((sum / comp.length)*10)/10 : 0
-      };
-      renderLeaderboardUI(players, stats, highlightedId);
     });
+    var players = filtered.map(function(item, idx){
+      return {
+        rank: idx + 1,
+        id: item.id,
+        name: item.name,
+        total: item.total || 0,
+        r1: item.r1 || 0,
+        r2: item.r2 || 0,
+        r3: item.r3 || 0,
+        duration: item.duration || 0,
+        title: item.title || '',
+        status: item.status || 'completed'
+      };
+    });
+    var comp = all.filter(function(x){return x.status === 'completed'});
+    var maxP = null, minP = null, sum = 0;
+    comp.forEach(function(c){
+      sum += (c.total || 0);
+      if(!maxP || c.total > maxP.total) maxP = c;
+      if(!minP || c.total < minP.total) minP = c;
+    });
+    var stats = {
+      total_players: all.length,
+      total_completed: comp.length,
+      highest_score: maxP ? maxP.total : 0,
+      highest_scorer_name: maxP ? maxP.name : '-',
+      lowest_score: minP ? minP.total : 0,
+      lowest_scorer_name: minP ? minP.name : '-',
+      average_score: comp.length ? Math.round((sum / comp.length)*10)/10 : 0
+    };
+    renderLeaderboardUI(players, stats, highlightedId);
+  });
 }
 
 function renderLeaderboardUI(players, stats, highlightedId){
